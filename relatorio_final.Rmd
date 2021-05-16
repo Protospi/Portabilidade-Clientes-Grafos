@@ -1,0 +1,515 @@
+---
+title: "Trabalho de Grafos"
+author: "Pedro Loes"
+date: "14/03/2021"
+output: pdf_document
+---
+
+
+# Introdução
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O tema escolhido foi a portabilidade de clientes da plataforma de cursos on-line DataCamp. O banco de dados utilizado recupera as informações sobre portabilidade de alunos da plataforma. Este banco de dados faz parte do curso _Predictive Analytics Using Networked Data in R_ oferecido pela mesma plataforma.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A primeira parte do trabalho consistiu na análise exploratória e descritiva do grafo por meio da ilustração da rede e cálculo de estatísticas descritivas. A segunda parte consistiu na modelagem da cooperação entre clientes da rede utilizando o modelo de Grafos Aleatórios Exponenciais.
+
+```{r warning=F, message=F, error=F}
+
+# Carrega Bibliotecas
+library(igraph)
+library(tidyverse)
+library(knitr)
+library(ergm)
+library(broom)
+
+# Carrega dados
+load("dados/StudentEdgelist.RData")
+load("dados/StudentCustomers.RData")
+
+# Renomeia categorias de portabilidade
+clientes <- customers %>% mutate(portabilidade = ifelse(churn == 0, "Não", "Sim"))
+
+```
+
+* Os pacotes __tidyverse__ e __knitr__ foram utilizados para manipular e imprimir os dados. O pacote __igraph__ foi utilizado para construção, visualização e o cálculo das estatísticas da rede. O pacote __ergm__ e o pacote __broom__ foram utilizados para modelar e extrair os resultados do modelo.
+
+* O data frame de __arestas__ ou ligações entre clientes possui __`r nrow(edgeList)`__ observações.
+
+* O data frame de __vértices__ com a variável indicadora de portabilidade de clientes possui __`r nrow(customers)`__ observações de clientes.
+
+
+# Análise Exploratória e Descritiva
+
+* A análise exploratória e descritiva da rede consistiu em:
+  + Ilustrar o grafo e um subgrafo da rede.
+  + Calcular estatísticas utilizadas no universo de grafos para compreender a relações entre os vértices.
+  + Produzir um gráfico do tipo histograma para visualizar a distribuição dos graus da rede.
+  + Produzir um gráfico de barras para visualizar a quantidade de clientes que optaram pela portabilidade.
+  
+
+## Grafo da Rede de Clientes
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O layout __kamada.kawai__ foi utilizado para desenhar o grafo. Os clientes que não optaram pela portabilidade receberam a cor __azul__ e os clientes que optaram pela portabilidade receberam a cor __verde__. O parâmetro tamanho dos vértices recebeu o valor __2__ para evitar a sobreposição de clientes.
+
+```{r warning=F, message=F, error=F, eval = FALSE}
+
+# Declara a rede apartir do data frame de arestas
+rede <- graph_from_data_frame(edgeList, directed = FALSE)
+
+# Atribui cor verde para clientes que portaram 
+V(rede)$color <- gsub("1", "green", clientes$churn) 
+
+# Atribui a cor azul para os clientes que não portaram
+V(rede)$color <- gsub("0", "blue", clientes$churn)
+
+# Desenha o grafo
+plot(rede,
+     vertex.label = NA,
+     edge.label = NA,
+     edge.color = "black",
+     vertex.size = 2,
+     layout = layout_with_kk)
+
+```
+
+```{r fig.align='center', fig.width=6, fig.hight=8, echo = FALSE}
+
+# Constroi rede
+rede <- graph_from_data_frame(edgeList, directed = FALSE)
+
+# Atribui cor verde para clientes que portaram 
+V(rede)$color <- gsub("1", "green", customers$churn) 
+
+# Atribui a cor azul para os que nao portaram
+V(rede)$color <- gsub("0", "blue", customers$churn)
+
+# Carrega Biblioteca
+library(png)
+library(grid)
+
+# Carrega imagem
+img <- readPNG("imagens/rede_completa.png")
+
+# Imprime imagem
+grid.raster(img)
+
+```
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A ilustração gráfica não possibilita a percepção visual de algum padrão na estrutura da rede de clientes. Porém, é possível verificar que o número de clientes que optaram pela portabilidade é visivelmente inferior aos que permaneceram na plataforma. 
+
+
+## Subgrafo da Rede de Clientes
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O segundo grafo ilustra um subgrafo da rede completa considerando apenas com os clientes que optaram pela portabilidade. O layout utilizado para desenhar a subrede de clientes que optaram pela portabilidade foi __fruchterman reingold__ porque facilitou a separação dos clientes isolados em relação aos conectados.
+  
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Todos os clientes deste subgrafo optaram pela portabilidade e portanto foram coloridos com a cor verde. As arestas receberam a cor preta. O tamanho dos vértices foi indicado com o valor __3__ e o das arestas recebeu o valor __4__ para facilitar a visualização das relações e evitar sobreposições de clientes tendo em vista que esta subrede possui menos vértices e menos arestas que a rede completa.
+
+```{r warning=F, message=F, error=F, eval = FALSE}
+
+# Declara subgrafo de clientes que optaram pela portabilidade
+rede_portabilidade <- induced_subgraph(rede, v = V(rede)[which(V(rede)$churn == 1)])
+
+# Desenha grafico 
+plot(rede_portabilidade,
+     vertex.label = NA,
+     vertex.size = 2,
+     edge.size = 4,
+     edge.color = "black",
+     vertex.color = "green",
+     layout = layout_with_fr)
+
+```
+
+```{r fig.align='center', fig.width=8, fig.hight=10, echo = FALSE}
+
+# Carrega imagem
+img <- readPNG("imagens/rede_portabilidade.png")
+
+# Desenha imagem
+grid.raster(img)
+
+```
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Pode-se observar que dos __774__ vértices deste subgrafo de clientes que optaram pela portabilidade, __438__, ou __57 %__ desses clientes não se comunicam com nenhum outro cliente dentre os que optaram pela portabilidade. 
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Dentre os clientes que optaram pela portabilidade e se conectam a outros clientes que optaram pela portabilidade, pode-se observar que o grafo __não é conectado__. As relações entre estes clientes apresentaram diversas estruturas de __árvores__ e __estrelas__, mas __nenhum triângulo__.
+
+## Estatísticas Descritivas
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Para compreender as características da rede de portabilidade diversas estatísticas foram calculadas para verificar __simplicidade__, __conectibilidade__, __coesão__, __comunidades__, __subgrafos__ e __semelhanças__.
+
+```{r warning=F, message=F, error=F}
+
+# Verifica se o grafo é simples
+simples <- is.simple(rede)
+
+# Verifica se a rede e conectada 
+conectada <- is.connected(rede)
+
+# Calcula diâmetro
+diametro <- diameter(rede)
+
+# Calcula densidade 
+densidade <- graph.density(rede)
+
+# Calcula transitividade 
+transitividade <- transitivity(rede)
+
+# Calcula assortatividade nominal
+assort_nominal <- assortativity_nominal(rede, (V(rede)$color == "1") + 1, directed = F)
+
+# Calcula assortatividade de grau
+assort_graus <- assortativity.degree(rede)
+
+# Calcula número e tamanho de comunidades
+comunidades <- sizes(fastgreedy.community(rede))
+
+```
+
+* __Estatísticas__:
+  + __Simplicidade__ e __Conectividade__: 
+    + A rede apresentou as características de ser __simples__ pelo fato de não possuir loops ou múltiplas arestas e ser __conectada__ pois cada vértice estava ao alcance de qualquer outro vértice.
+  + __Diâmetro__: 
+    + A maior __distância geodésica__ dos menores caminhos entre os vértices foi __`r diametro`__. Esta estatística indicou que não é preciso passar por muitos vértices para atravessar a rede.
+  + __Densidade__:
+    + O __nº de arestas realizadas__ dividido pelo __nº de arestas em potencial__ foi __`r round(densidade,4)`__. A estatística indicou que a rede apresentava pouca densidade dado que $\boldsymbol{D \in [0,1]}$.
+  + __Transitividade__: 
+    + O percentual de __trincas__ que se conectavam e formavam __triângulos__ foi de __0.105%__. Esta estatística indicou uma __probabilidade pequena__ de coesão nas estruturas de comunidades.
+  + __Clusters__:
+    + O número de __clusters aglomerativos hierárquicos__ foi __19__. O tamanho das comunidades variou entre o mínimo de __54__ e o máximo de __567__.
+  + __Assortatividade Nominal__: 
+    + A __Homofilia de Portabilidade__ apresentou $\boldsymbol{r_a}=$  __`r round(assort_nominal,4)`__. Esta estatistica indicou que os clientes apresentaram correlação positiva fraca com a portabilidade de seus vizinhos.
+  + __Assortatividade de Graus__:
+    + A __Homofilia de Graus__, apresentou  $\boldsymbol{r_a}=$  __`r round(assort_graus,4)`__ . Esta estatística indicou que os clientes apresentaram correlação negativa fraca de graus com seus vizinhos.
+
+
+## Distribuição dos Graus 
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A distribuição dos graus representa a contagem do número de vértices em cada grau do grafo. Para ilustrar a forma da distribuição foi utilizado o gráfico do tipo histograma.
+
+```{r warning=F, message=F, error=F, eval = F}
+
+# Cálcula graus da rede 
+graus <- degree(rede)
+
+# Desenha Histograma de Graus
+ggplot(as_tibble(graus), aes(x = value))+
+    geom_histogram(binwidth = 1,
+                   fill = "blue",
+                   col="grey",
+                   position = 'dodge')+
+    xlab("Graus")+
+    ylab("Frequencia")+
+    ggtitle("Histograma dos Graus")
+
+```
+
+
+```{r fig.align='center', fig.width=6, fig.hight=8, echo = FALSE}
+
+# Calcula grau da rede 
+graus <- degree(rede)
+
+# Carrega imagem
+img <- readPNG("imagens/histograma_graus.png")
+
+# Imprime imagem
+grid.raster(img)
+
+```
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Pode-se observar que a distribuição da estatística de graus dos vértices apresenta __amplitude__ de mínimo __1__ e máximo __14__ graus, com __1º quartil = 3__ e __3º quartil= 6__. A distribuição apresenta uma __cauda a direita ou positiva__ indicando que existem poucas observações atípicas que apresentaram estatística de grau de incidência nos vértices maior que __10__.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A aplicação do teste de Shapiro-Wilk indicou a rejeição da hipótese de normalidade da distribuição dos graus apresentando uma estatística __W = 0.96589__ com P-Valor de __9.86e-33__.
+
+
+## Gráfico de Barras da Portabilidade
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Para inspecionar a quantidade de clientes que optaram pela portabilidade foi produzido um gráfico de barras com duas barras. A primeira representa a frequência dos clientes que permaneceram na plataforma e a segunda representa os clientes que optaram pela portabilidade.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Os clientes que não optaram pela portabilidade receberam a cor azul e os clientes que optaram pela portabilidade receberam a cor verde compatíveis com o grafo da rede.
+
+
+```{r warning=F, message=F, error=F, eval = FALSE}
+
+# Desenha gráfico de barras da portabilidade de clientes
+ggplot(clientes, aes(x = as.factor(portabilidade),
+                      fill = as.factor(portabilidade) )) +  
+    geom_bar() +
+    xlab("Portabilidade") + 
+    ylab("Frequencia") +
+    scale_fill_manual("Portabilidade",
+                      values = c("blue", "green"))
+
+```
+
+```{r fig.align='center', fig.width=6, fig.hight=8, echo = FALSE}
+
+# Carrega imagem
+img <- readPNG("imagens/contagem_portabilidade.png")
+
+# Imprime imagem
+grid.raster(img)
+
+```
+
+* O total de clientes que optaram por permanecer na plataforma foi de __4190__.
+
+* O total de clientes que optaram pela portabilidade foi de __774__.
+
+* A taxa de conversão foi $\approx$ __16 %__.
+
+# Modelos de Grafos Aleatórios Exponênciais
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Para verificar se existe cooperação ou ligação entre os clientes em função da portabilidade e outras estruturas de subgrafos foi ajustado o modelo de Grafos Aleatórios Exponenciais.
+
+## Especificações do Modelo
+
+* Número de arestas:
+  + $S_1 = \sum_{i,j} y_{i,j}$
+  
+* Solução de Snijders de restrição paramétrica para alternância da estatística k-estrelas:
+  + $AKS_{\lambda}(y) = \sum_{k=2}^{N_v - 1} (-1)^k \frac{S_k(y)}{\lambda^{k - 2}}$
+  
+* Generalização de estruturas triádicas baseadas na soma alternada de triângulos:
+  + $AKT_{\lambda}(y) = 3T_1 + \sum_{k=2}^{N_v - 2} (-1)^{k+1}  \frac{T_k(y)}{\lambda^{k-1}}$
+  
+* Estatística do atributo portabilidade:
+  + $g(y,x) = \sum_{ 1 < i < j < N_v }^{} y_{i,j} h(x_i, x_j)$
+  
+* Modelo Completo:
+  + $P_{\theta, \beta}(Y = y | X = x) = ( \frac{1}{k(\theta, \beta)}) exp ( \theta_1 S_1(y) + \theta_2 AKS_{\lambda}(y) + \theta_3 AKT_{\lambda}(y) + \beta g(x,y) )$
+    
+```{r warning=F, message=F, error=F}
+
+# Define rede do tipo network a partir de matriz de adjacências
+rede.s <- network::as.network( as.matrix( get.adjacency(rede) ), directed = F)
+
+# Define atributo de portabilidade
+network::set.vertex.attribute(rede.s, "Portabilidade", clientes$churn)
+
+# Especifica modelo
+minha.ergm <- formula(rede.s ~ edges + kstar(2) + kstar(3) + triangle +
+                      nodemain("Portabilidade") + match("Portabilidade"))
+
+# Recupera resumo da especificação
+especs <- t(t(summary(minha.ergm)))
+
+# Declara data frame de resultados
+especs <- tibble(Estatisticas = row.names(especs),
+                 Contagem = especs[,1] %>%  as.vector())
+
+# Imprime tabela 
+kable(especs)
+
+```
+
+## Ajuste do Modelo
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O modelo foi ajustado usando métodos numéricos para estimar o log da máxima verossimilhança dos coeficientes $\boldsymbol{\hat\theta_1, \hat\theta_2, \hat\theta_3}$ e $\boldsymbol{\hat\beta}$ utilizando __Monte Carlo__ com __Cadeias de Markov__ .
+
+```{r warning=F, message=F, error=F, eval = F}
+
+# Indica Semente
+set.seed(10)
+
+# Ajusta modelo
+modelo <- ergm(minha.ergm, set.control.ergm = control.ergm(MCMC.burnin = 1e5))
+
+# Imprime tabela de Resumo do modelo
+kable(summary(modelo)$coefficients)
+
+```
+
+```{r warning=F, message=F, error=F, echo = F}
+
+# Indica Semente
+set.seed(10)
+
+# Ajusta modelo
+modelo <- ergm(minha.ergm, set.control.ergm = control.ergm(MCMC.burnin = 1e5))
+
+# Declara data frame de resultados
+resultados <- data.frame(Atributos = c("Arestas",
+                                       "Estrela-2",
+                                       "Estrela-3",
+                                       "Triângulo",
+                                       "nodcov.Portabilidade",
+                                       "nodmatch.Portabilidade")) %>%
+  cbind(summary(modelo)$coefficients) %>% 
+  as_tibble() %>% 
+  rename("Estimativa" = "Estimate",
+         "Erro Padrão" = "Std. Error",
+         "Valor z" = "z value")
+
+# Imprime tabela de Resumo do modelo
+kable(resultados)
+
+```
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O coeficiente __edges__ que representa a probabilidade homogênea de ligação (__ties__) entre vértices apresentou __P-valor__ significativo de __1e-10__. O log da chance de ocorrer um vínculo (__tie__) é __-6.8273__ $\times$ __1__. Considerando todos os vínculos $\frac{ \boldsymbol{exp(-6.8273)}}{\boldsymbol{1 + exp(-6.8273)}} \approx$ __0.0011__. Esse valor corresponde a densidade __0.001__ observada na etapa das estatísticas descritivas da rede.
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O coeficiente de efeito positivo __nodcov.Portabilidade__ apresentou __P-valor__ = __0.03__ significativo que pode ser interpretado como __log da razão da chance__ de cooperação entre clientes condicionado na portabilidade. O coeficiente exponenciado __exp(0.061)__ $\approx$ __1.0626462__ indicou que os clientes que optaram pela portabilidade apresentaram chance de cooperação de aproximadamente __6 %__ mais do que os clientes que não optaram pela portabilidade.
+ 
+
+## Análise de Variância
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A análise de variância foi utilizada para comparação com o modelo sem nenhuma variável e verificar o quanto da variação de conectividade da rede foi explicada pelas variáveis.
+
+```{r warning=F, message=F, error=F, eval = F}
+
+# Executa Anova e recupera resultados da comparação ente modelos
+kable(tidy(anova(modelo)) %>% rename("Pvalor" = "Pr...Chisq..") %>% 
+        replace_na(list(df = "-", Deviance = "-", Pvalor = "-")))
+
+```
+
+```{r warning=F, message=F, error=F, echo = F}
+
+# Calcula analise de variancia e recupera comparação de modelos
+analise_var <- tidy(anova(modelo)) %>% 
+        rename("Modelo" = "term",
+               "Gl" = "df",
+               "Desvio" = "Deviance",
+               "Resíduo Gl" = "Resid..Df",
+               "Desvio Resíduos" = "Resid..Dev",
+               "Pvalor" = "Pr...Chisq..") %>% 
+        replace_na(list(Gl = "-", Desvio = "-", Pvalor = "-")) %>% 
+  mutate(Modelo = c("Nulo", "Especificado"))
+
+# Executa Anova e recupera resultados 
+kable(analise_var) 
+
+```
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O resultado da análise de variância indicou uma forte evidência de que o modelo especificado explica uma parte da variabilidade das conexões da rede se comparado ao modelo nulo com __P-valor__ de __2.22e-16__.
+
+## Qualidade do Ajuste
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+Para verificar a qualidade do ajuste foram implementadas simulações Monte Carlo de grafos aleatórios semelhantes para comparar características como distribuição dos graus, comprimento das geodésicas e número de vizinhos compartilhados por um par de vértices.
+
+```{r warning=F, message=F, error=F, eval = F}
+
+# Simula grafos aleatórios para comparar ajuste
+bondade_ajuste <- gof(modelo)
+
+# Desenha gráficos
+plot(bondade_ajuste, main = "Diagnóstico da Qualidade do Ajuste")
+
+```
+
+
+```{r fig.align='center', fig.width=6, fig.hight=4, echo = FALSE}
+
+# Carrega imagem
+img <- readPNG("imagens/diagnostico_1.png")
+
+# Imprime imagem
+grid.raster(img)
+
+```
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A proporção das estatísticas de contagem do número de __arestas__, e __nodematch.Portabilidade__ do modelo ajustado foi superior a __mediana__ das simulações de __grafos aleatórios MCMC__. Porém estas estatísticas estão localizadas dentro dos intervalos entre o __1º__ e __3º__ quartis indicando bom ajuste do modelo referente a estas estatísticas.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A proporção das estatística de contagem de  ___kstar2___  e __kstar3__ do modelo ajustado apresentaram estimativas muito próximas da __mediana__ das simulações de __grafos aleatórios MCMC__. Tal fato indicou ótimo ajuste do modelo em relação a estas estatísticas.
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A proporção das estatística de contagem de __triângulos__ e __nodecov.Portabilidade__ do modelo apresentaram estimativas praticamente __iguais a mediana__ das simulações de __grafos aleatórios MCMC__. Tal fato indicou excelente ajuste do modelo para estas estatísticas.
+
+
+```{r fig.align='center', fig.width=8, fig.hight=6, echo = FALSE}
+
+# Carrega imagem
+img <- readPNG("imagens/diagnostico_2.png")
+
+# Imprime imagem
+grid.raster(img)
+
+```
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A qualidade do ajuste da proporção de __dyads__, ou seja, estrutura de subgrafo da ordem __2__ onde existem __2__ vértices, independente de existir conexão entre eles, em relação a cada __distância geodésica mínima__, apresentou valores muito próximos da __mediana__ da distribuição de __dyads__ da simulação de __grafos aleatórios MCMC__ para todas as distâncias. Tal fato indicou um bom ajuste deste tipo de estrutura.
+
+```{r fig.align='center', fig.width=8, fig.hight=6, echo = FALSE}
+
+# Carrega imagem
+img <- readPNG("imagens/diagnostico_3.png")
+
+# Imprime imagem
+grid.raster(img)
+
+```
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A proporção de __arestas__ para o número de __vizinhos compartilhados por um par de vértices__ parece apresentar valores semelhantes à simulação __grafos aleatórios MCMC__. Porém as distribuições da estatística desta proporção  apresentaram variância muito pequena não sendo possível verificar os quartis.
+
+```{r fig.align='center', fig.width=8, fig.hight=6, echo = FALSE}
+
+# Carrega imagem
+img <- readPNG("imagens/diagnostico_4.png")
+
+# Imprime imagem
+grid.raster(img)
+
+```
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A proporção de __vértices__ em cada __grau__ só apresentou compatibilidade com as simulações para graus __inferiores__ a __4__ e __superiores__ a __5__. Tal fato indicou que o modelo ajustou uma proporção inferior de vértice com graus __4__ e __5__ nos __dados da rede de portabilidade__ se comparado as __simulações aleatórias MCMC__. Nestes graus a proporção de vértices não pertence ao intervalo entre o __1º__ e o __3º__ quartil das simulações.
+
+# Conclusões
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O modelo apresentou __ajuste significativo__ para explicar a __conectividade da rede de clientes__. A qualidade do ajuste indicou que o modelo é __similar__ aos grafos simulados aleatoriamente com a mesma estrutura de coeficientes. Somente na estatística __proporção de vértices por grau__, o modelo parece __distoar__ das simulações na região central da distribuição.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+O coeficiente __nodecov.Portabilidade__ indicou que os grupos que optaram pela __portabilidade cooperavam__ mais na rede. Tal evidência poderia sugerir que clientes __mais conectados__ tenderiam a __conhecer novas plataformas__ e a trocar de plataforma com mais frequência. Outra razão seria supor que clientes mais engajados tenderiam a __completar seus estudos__ e migrar para plataformas diferentes.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+A compreensão da variabilidade na conexão entre os indivíduos  poderia ser melhor examinada com a __mineração de mais dados__ sobre o comportamento dos clientes. No que diz respeito a implementações futuras, __modelos de classificação binária__ poderiam ser considerados para tentar __inferir a portabilidade de clientes__  considerando como atributos as estatísticas das estruturas desta rede.
+
+
+# Referências
+
+* Kolaczyk, E. D. (2010). Statistical analysis of network data: Methods and models. New York: Springer.
+
+* [\textcolor{blue}{statnet}](http://statnet.org/Workshops/ergm_tutorial.html)
+
+* [\textcolor{blue}{Predictive Analytics Using Networked Data in R}](https://learn.datacamp.com/courses/predictive-analytics-using-networked-data-in-r)
+
+
+
+  
+
+
+
+
